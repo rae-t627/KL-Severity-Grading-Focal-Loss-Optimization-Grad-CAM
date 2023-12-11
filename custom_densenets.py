@@ -187,28 +187,3 @@ def se_densenet121_model(num_class, use_pretrained = True):
     model.classifier = torch.nn.Linear(in_features, num_class)
     
     return model 
-
-# def grad_cam(model, input_tensor, class_idx):
-#     def forward_hook(module, input, output):
-#         return output
-    
-#     final_layer = model.features.norm5
-#     hook = final_layer.register_forward_hook(forward_hook)
-
-#     logits = model(input_tensor)
-#     model.zero_grad()
-#     loss = logits[0, class_idx].backward()
-
-#     features = hook.features
-#     grads = final_layer.weight.grad
-
-#     pooled_grads = grads.mean(dim=(2, 3), keepdim=True)
-#     weights = (features * pooled_grads).mean(dim=(0, 2, 3), keepdim=True)
-#     heatmap = (weights * features).sum(dim=1, keepdim=True).relu().squeeze()
-
-#     heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
-#     heatmap = torch.nn.functional.interpolate(heatmap.unsqueeze(0).unsqueeze(0), size=(img.size[1], img.size[0]), mode='bilinear', align_corners=False).squeeze()
-#     heatmap = heatmap.detach().numpy()
-
-#     return heatmap
-

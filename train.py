@@ -11,14 +11,18 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision import transforms
 from torchvision import datasets
 
-batch_size = 32
-frame_size = (224, 224)
-
-
 import random
 import custom_resnets
 import custom_densenets
 import os
+
+import sklearn
+
+import re
+import utils
+
+batch_size = 32
+frame_size = (224, 224)
 
 if torch.cuda.is_available():
     device = 'cuda'
@@ -36,15 +40,8 @@ n_classes = len(classes_header)
 # Choose CNN architecture and output directory
 
 cnn_model = custom_densenets.se_densenet121_model(n_classes)
-# cnn_model = custom_densenets.densenet121_model(n_classes)
-# cnn_model = custom_resnets.resnet18_model(n_classes)
-# cnn_model = custom_resnets.resnet34_model(n_classes)
-# cnn_model = custom_resnets.resnet50_model(n_classes)
 # cnn_model = custom_resnets.se_resnet18_model(n_classes)
-# cnn_model = custom_resnets.se_resnet34_model(n_classes)
-# cnn_model = custom_resnets.se_resnet50_model(n_classes)
 
-# cnn_model = custom_resnets.se_resnet18_model(n_classes)
 # cnn_model.load_state_dict(torch.load('models/SE_ResNet_FL_64.25.ckpt', map_location=torch.device(device)))
 
 checkpoints_dir = os.path.join('output', 'densenet')
@@ -65,8 +62,8 @@ torch.backends.cudnn.enabled = False
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
-import sklearn
 
+#Loading the dataset
 transforms_to_train = transforms.Compose([         
               transforms.ColorJitter(brightness=.33, saturation=.33),
               transforms.RandomHorizontalFlip(p=0.5),
@@ -97,9 +94,8 @@ batch_size = 32  # You can adjust this based on your needs
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, drop_last=True)
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, drop_last=True)
 
-
-
-if torch.cuda.is_available(): # Let's make sure GPU is available!
+# Making sure GPU is available
+if torch.cuda.is_available(): 
     device = torch.device("cuda:0")
     device_name = 'cuda:0'
     print("device: CUDA")
@@ -107,11 +103,6 @@ else:
     device = torch.device("cpu")
     device_name = 'cpu'
     print("device: CPU")
-
-
-import re
-import os
-import utils
 
 
 def append_to_file(filename, val):

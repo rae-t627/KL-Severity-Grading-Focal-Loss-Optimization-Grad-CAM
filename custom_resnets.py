@@ -318,5 +318,3 @@ def se_resnet34_model(num_class, pretrained=True):
 
 def se_resnet50_model(num_class, pretrained=True):
     return se_nets.se_resnet50(num_class, pretrained = pretrained)
-
-

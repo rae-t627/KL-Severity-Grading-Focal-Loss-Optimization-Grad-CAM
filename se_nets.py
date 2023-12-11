@@ -550,4 +550,3 @@ def se_resnext50_32x4d(num_classes, loss='softmax', pretrained=True, **kwargs):
         model_url = pretrained_settings['se_resnext50_32x4d']['imagenet']['url']
         init_pretrained_weights(model, model_url)
     return model
-

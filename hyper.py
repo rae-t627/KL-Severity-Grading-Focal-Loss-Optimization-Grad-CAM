@@ -11,14 +11,18 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision import transforms
 from torchvision import datasets
 
-batch_size = 32
-frame_size = (224, 224)
-
-
 import random
 import custom_resnets
-# import custom_densenets
+import custom_densenets
 import os
+
+import sklearn
+
+import re
+import utils
+
+batch_size = 32
+frame_size = (224, 224)
 
 if torch.cuda.is_available():
     device = 'cuda'
@@ -34,20 +38,12 @@ classes_header = ["0", "1", "2", "3", "4"]
 n_classes = len(classes_header)
 
 # Choose CNN architecture and output directory
-
 # cnn_model = custom_densenets.se_densenet121_model(n_classes)
-# cnn_model = custom_densenets.densenet121_model(n_classes)
-# cnn_model = custom_resnets.resnet18_model(n_classes)
-# cnn_model = custom_resnets.resnet34_model(n_classes)
-# cnn_model = custom_resnets.resnet50_model(n_classes)
 cnn_model = custom_resnets.se_resnet18_model(n_classes)
-# cnn_model = custom_resnets.se_resnet34_model(n_classes)
-# cnn_model = custom_resnets.se_resnet50_model(n_classes)
 
-# cnn_model = custom_resnets.se_resnet18_model(n_classes)
 cnn_model.load_state_dict(torch.load('models/SE_ResNet_FL_64.25.ckpt', map_location=torch.device(device)))
 
-checkpoints_dir = os.path.join('output', 'testing')
+checkpoints_dir = os.path.join('output', 'se-resnet')
 
 if (not os.path.exists(checkpoints_dir)):
     os.mkdir(checkpoints_dir)
@@ -65,10 +61,7 @@ torch.backends.cudnn.enabled = False
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 
-import sklearn
-
-validation_split = .125
-
+#Loading the Dataset
 transforms_to_train = transforms.Compose([         
               transforms.ColorJitter(brightness=.33, saturation=.33),
               transforms.RandomHorizontalFlip(p=0.5),
@@ -99,9 +92,8 @@ batch_size = 32  # You can adjust this based on your needs
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, drop_last=True)
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, drop_last=True)
 
-
-
-if torch.cuda.is_available(): # Let's make sure GPU is available!
+#Making sure GPU is available
+if torch.cuda.is_available(): 
     device = torch.device("cuda:0")
     device_name = 'cuda:0'
     print("device: CUDA")
@@ -109,11 +101,6 @@ else:
     device = torch.device("cpu")
     device_name = 'cpu'
     print("device: CPU")
-
-
-import re
-import os
-import utils
 
 
 def append_to_file(filename, val):
@@ -218,13 +205,7 @@ else:
     cnn_model.type(torch.cuda.FloatTensor)
     cnn_model.to(device)
 
-# loss = nn.CrossEntropyLoss(weight=class_weights).type(torch.cuda.FloatTensor)
-# optimizer = optim.Adam(cnn_model.parameters(), lr=1e-3, weight_decay=1e-4)
-# lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.95) # decrease lr by 5% every 5 epochs
-# prev_val_accuracy = 60
-
-# loss_history, train_history, val_history = \
-#     train_model(cnn_model, train_loader, val_loader, loss, optimizer, 71, prev_val_accuracy, lr_scheduler)
+#Hyperparameter Tuning
 
 from optuna import Trial, create_study
 from optuna.samplers import TPESampler
@@ -238,10 +219,7 @@ def objective(trial: Trial):
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.95)
 
     loss = nn.CrossEntropyLoss(weight=class_weights).type(torch.cuda.FloatTensor)
-    
-    checkpoints_dir = os.path.join('output', str(alpha), '_', str(gamma))
 
-    # Modify your training function to accept alpha and gamma as arguments
     loss_history, train_history, val_history = train_model(
         cnn_model, train_loader, val_loader, loss, optimizer, 10,
         0, lr_scheduler, alpha=alpha, gamma=gamma

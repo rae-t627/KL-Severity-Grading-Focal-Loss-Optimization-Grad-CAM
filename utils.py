@@ -21,7 +21,6 @@ def compute_accuracy(model, loader):
         x_gpu = x.to(device)
         y_gpu = y.to(device)
 
-        
         prediction = model(x_gpu) 
 
         indices = torch.argmax(prediction, 1)
