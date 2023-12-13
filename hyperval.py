@@ -17,11 +17,32 @@ import custom_densenets
 import os
 
 import sklearn
-
+import argparse
 import re
 import utils
 
-batch_size = 32
+from optuna import Trial, create_study
+from optuna.samplers import QMCSampler
+import optuna
+import os
+
+
+parser = argparse.ArgumentParser(description='Compute accuracy of model')
+parser.add_argument('-m', '--model', type=str, choices = ["densenet", "resnet"], default="resnet")
+parser.add_argument('-w', '--weights', type = str, help = "path to weights", default=None)
+parser.add_argument('-p', '--pretrained', action="store_true", help="train on top of pretrained model")
+parser.add_argument('-d', '--dataset', type = str, help = "path to dataset", default='dataset')
+parser.add_argument('-b', '--batch_size', type=int, choices=[16, 32, 64, 128, 256], default=32)
+parser.add_argument('-l', '--loss', type=str, help="loss function to be used", choices=["fl", "ce"], default="ce")
+parser.add_argument('-o', '--output_dir', type=str, default="output")
+parser.add_argument('-e', '--epochs', type=int, default=100)
+parser.add_argument('--learning_rate', type=float, default=1e-3)
+parser.add_argument('-n', '--n_trials', type=int, default=100)
+parser.add_argument('-s', '--study_name', type=str, required=True)
+parser.add_argument('--patience',help= "patience of patience pruner", type=int, default=5)
+
+args = parser.parse_args()
+
 frame_size = (224, 224)
 
 if torch.cuda.is_available():
@@ -32,18 +53,12 @@ else:
 # Set the parameter for reproducible results
 random_seed = 21 # 21, 42 or 84
 
-train_dataset_path = 'dataset/train'
-val_dataset_path = 'dataset/val'
+train_dataset_path = os.path.join(args.dataset, "train")
+val_dataset_path = os.path.join(args.dataset, "val")
 classes_header = ["0", "1", "2", "3", "4"] 
 n_classes = len(classes_header)
 
-# Choose CNN architecture and output directory
-# cnn_model = custom_densenets.se_densenet121_model(n_classes)
-cnn_model = custom_resnets.se_resnet18_model(n_classes)
-
-cnn_model.load_state_dict(torch.load('models/SE_ResNet_FL_64.25.ckpt', map_location=torch.device(device)))
-
-checkpoints_dir = os.path.join('output', 'se-resnet')
+checkpoints_dir = args.output_dir
 
 if (not os.path.exists(checkpoints_dir)):
     os.mkdir(checkpoints_dir)
@@ -63,14 +78,14 @@ torch.backends.cudnn.deterministic = True
 
 #Loading the Dataset
 transforms_to_train = transforms.Compose([         
-              transforms.ColorJitter(brightness=.33, saturation=.33),
-              transforms.RandomHorizontalFlip(p=0.5),
-              transforms.RandomAffine(degrees=(-10, 10), scale=(0.9, 1.10)),
-              transforms.Resize(frame_size), 
+    transforms.ColorJitter(brightness=.33, saturation=.33),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomAffine(degrees=(-10, 10), scale=(0.9, 1.10)),
+    transforms.Resize(frame_size), 
 
-              transforms.ToTensor(),
-              transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-            ])
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+])
 
 train_dataset = datasets.ImageFolder(train_dataset_path, transform=transforms_to_train)
 val_dataset = datasets.ImageFolder(val_dataset_path, transform=transforms_to_train)
@@ -85,10 +100,9 @@ val_sampler = SubsetRandomSampler(range(len(val_dataset)))
 
 class_weights=sklearn.utils.class_weight.compute_class_weight('balanced', classes=np.unique(train_targets), y=train_targets)
 class_weights = torch.FloatTensor(class_weights)
-print(class_weights)
 
 # Set up data loaders for training and validation
-batch_size = 32  # You can adjust this based on your needs
+batch_size = args.batch_size  # You can adjust this based on your needs
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, drop_last=True)
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, drop_last=True)
 
@@ -114,7 +128,7 @@ def read_file(filename):
 
     return lines
 
-def train_model(model, train_loader, val_loader, loss, optimizer, num_epochs, prev_val_acc = 0, lr_scheduler = None, anneal_epoch = 0, alpha = 2, gamma = 0.5): 
+def train_model(model, train_loader, val_loader, trial, loss, optimizer, num_epochs, prev_val_acc = 0, lr_scheduler = None, anneal_epoch = 0, alpha = None, gamma = 2, alpha_scaling_factor = 0.25): 
     if not os.path.exists(checkpoints_dir):
         os.makedirs(checkpoints_dir)
 
@@ -145,9 +159,12 @@ def train_model(model, train_loader, val_loader, loss, optimizer, num_epochs, pr
             y_gpu = y.to(device)
             prediction = model(x_gpu)   
 
-            ce_loss = loss(prediction, y_gpu)
-            pt = torch.exp(-ce_loss)
-            loss_value = torch.mean(alpha * (1 - pt) ** gamma * ce_loss)
+            if (args.loss == "ce"):
+                loss_value = loss(prediction, y_gpu)
+            else:
+                ce_loss = loss(prediction, y_gpu)
+                pt = torch.exp(-ce_loss)
+                loss_value = torch.mean(alpha_scaling_factor*alpha[y_gpu] * (1 - pt) ** gamma * ce_loss)
 
             optimizer.zero_grad()
             loss_value.backward()
@@ -167,6 +184,13 @@ def train_model(model, train_loader, val_loader, loss, optimizer, num_epochs, pr
         with torch.no_grad():
           val_accuracy, _, _, _ = utils.compute_accuracy(model, val_loader)
 
+        val_history.append(val_accuracy)
+
+        trial.report(val_accuracy, epoch)
+
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+
         # write marks to files
         append_to_file(os.path.join(checkpoints_dir, 'loss_history.txt'), float(ave_loss))
         append_to_file(os.path.join(checkpoints_dir, 'train_history.txt'), train_accuracy)
@@ -184,59 +208,72 @@ def train_model(model, train_loader, val_loader, loss, optimizer, num_epochs, pr
           # best model
           model_save_name = 'best_model.ckpt'
           torch.save(model.state_dict(), os.path.join(checkpoints_dir, F"{model_save_name}"))
-
-          append_to_file(os.path.join(checkpoints_dir, 'best_accuracy.txt'), best_val_accuracy)
           print("update best model with val. accuracy %f on stage %d" % (best_val_accuracy, stage))
 
         print("epoch %d; average loss: %f, train accuracy: %f, val accuracy: %f" % (stage, ave_loss, train_accuracy, val_accuracy))
     
-    model_save_name = 'final.ckpt'
-    torch.save(model.state_dict(), os.path.join(checkpoints_dir, F"{model_save_name}"))
+    append_to_file(os.path.join(checkpoints_dir, 'best_accuracy.txt'), f"{best_val_accuracy} {alpha_scaling_factor} {gamma}")
     print("final best accuracy: %f" % (best_val_accuracy))
 
     return loss_history, train_history, val_history
-        
 
-# train model
-if device_name.startswith('cpu'):
-    cnn_model.type(torch.FloatTensor)
-    cnn_model.to(device)
-else:
-    cnn_model.type(torch.cuda.FloatTensor)
-    cnn_model.to(device)
 
 #Hyperparameter Tuning
 
-from optuna import Trial, create_study
-from optuna.samplers import TPESampler
-
 def objective(trial: Trial):
     # Hyperparameter search space
-    alpha = trial.suggest_float('alpha', 0.5, 2.0)
-    gamma = trial.suggest_float('gamma', 0.5, 2.0)
+    gamma = trial.suggest_float('gamma', 1.5, 2.5)
+    alpha_scaling_factor = trial.suggest_float('alpha_scaling_factor', 0.1, 3.0)
+
+    # choose an architecture
+    if (args.model == "densenet"):
+        cnn_model = custom_densenets.se_densenet121_model(n_classes)
+    else:
+        cnn_model = custom_resnets.se_resnet18_model(n_classes)
+
+    if (args.pretrained):
+        cnn_model.load_state_dict(torch.load(args.weights, map_location=torch.device(device)))
+
+    # train model
+    if device_name.startswith('cpu'):
+        cnn_model.type(torch.FloatTensor)
+        cnn_model.to(device)
+    else:
+        cnn_model.type(torch.cuda.FloatTensor)
+        cnn_model.to(device)
     
-    optimizer = optim.Adam(cnn_model.parameters(), lr=1e-3, weight_decay=1e-4)
+    optimizer = optim.Adam(cnn_model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.95)
 
     loss = nn.CrossEntropyLoss(weight=class_weights).type(torch.cuda.FloatTensor)
+    
+    print("Gamma: ", gamma)
+    print("Alpha Scaling Factor: ", alpha_scaling_factor)
 
     loss_history, train_history, val_history = train_model(
-        cnn_model, train_loader, val_loader, loss, optimizer, 10,
-        0, lr_scheduler, alpha=alpha, gamma=gamma
+        cnn_model, train_loader, val_loader, trial, loss, optimizer, args.epochs,
+        0, lr_scheduler, alpha=class_weights.to(device), gamma=gamma, alpha_scaling_factor=alpha_scaling_factor
     )
-
-    # Return the validation accuracy as the objective to maximize
     return max(val_history)
 
 # Set up the hyperparameter optimization study
-sampler = TPESampler(seed=random_seed)
-study = create_study(direction='maximize', sampler=sampler)
-study.optimize(objective, n_trials=5)  # You can adjust the number of trials
+gp_sampler = QMCSampler(seed=random_seed)
+pruner = optuna.pruners.PatientPruner(optuna.pruners.MedianPruner(), patience=args.patience)
+study = create_study(direction='maximize', sampler=gp_sampler, pruner = pruner, study_name=args.study_name, storage='sqlite:///' + args.study_name + '.db', load_if_exists = True)
+study.optimize(objective, n_trials=args.n_trials)
 
 # Get the best hyperparameters
 best_params = study.best_params
-best_alpha = best_params['alpha']
 best_gamma = best_params['gamma']
+best_alpha_scaling_factor = best_params['alpha_scaling_factor']
 
-print("Best Alpha:", best_alpha)
+append_to_file(os.path.join(checkpoints_dir, 'best_accuracy.txt'), f"\nBest alpha: {best_alpha_scaling_factor}\nBest gamma: {best_gamma}")
 print("Best Gamma:", best_gamma)
+print("Best Alpha Scaling Factor:", best_alpha_scaling_factor)
+
+#prints the most important parameters according to study done
+print(optuna.importance.get_param_importances(study))
+
+#helps visualise the contour plt
+fig = optuna.visualization.plot_contour(study)
+fig.show()
