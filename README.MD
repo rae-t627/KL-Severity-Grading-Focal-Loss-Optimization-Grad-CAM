@@ -1,9 +1,5 @@
 # Enhancing KL Severity Grading with Focal Loss Optimization and Interpretability through Grad CAM Analysis
 
-Model weights can downloaded from [here.](https://drive.google.com/drive/folders/1rXnFfJEilQ2eI4Zvh4IyCsa76m0zM2ta?usp=sharing)
-
-Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatwork/knee-osteoarthritis-dataset-with-severity)
-
 ## Project Structure
 ```
 .
@@ -41,6 +37,8 @@ Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatw
 
 ## Running the files
 
+Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatwork/knee-osteoarthritis-dataset-with-severity)
+
 ### Training:
 Example statement:
 ```
@@ -61,6 +59,7 @@ Other parameters can be changed. Do refer to the parser arguments for the same.
 
 
 ## Results
+Model weights can downloaded from [here.](https://drive.google.com/drive/folders/1rXnFfJEilQ2eI4Zvh4IyCsa76m0zM2ta?usp=sharing)
 
 | **Architecture**        | **Accuracy** | **Precision** | **Recall** | **F1**   |
 |-------------------------|--------------|---------------|------------|----------|
