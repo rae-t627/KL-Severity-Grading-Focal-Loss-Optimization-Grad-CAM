@@ -59,3 +59,14 @@ python3 hyperval.py -m resnet -o test -e 100 -n 100 -s study_name
 ```
 Other parameters can be changed. Do refer to the parser arguments for the same.
 
+
+## Results
+
+| **Architecture**        | **Accuracy** | **Precision** | **Recall** | **F1**   |
+|-------------------------|--------------|---------------|------------|----------|
+| SE-ResNet18 (CE loss)   | 68.12        | 63.67         | 68.12      | 64.69    |
+| SE-DenseNet (CE loss)   | 69.14        | 67.21         | 69.14      | 67.85    |
+| SE-ResNet18 (FL)        | 67.75        | 68.56         | 67.75      | 67.83    |
+| SE-DenseNet (FL)        | 68.05        | **70.68**      | 68.05      | **68.78**|
+| SE-ResNet18 (tuned FL)  | **69.38**    | 67.59         | **69.38**  | 67.75    |
+
