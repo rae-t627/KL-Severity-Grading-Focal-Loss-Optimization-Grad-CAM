@@ -39,3 +39,23 @@ Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatw
 └── utils.py
 ```
 
+## Running the files
+
+### Training:
+Example statement:
+```
+python3 train.py -m resnet -d dataset -b 32 -l ce -o test -e 100 --learning_rate 1e-3
+```
+Make sure your path to the dataset is correct. Other parameters can be changed. Do refer to the parser arguments for the same.
+
+### Computing accuracy on Test set, Grad-CAM
+
+To change any of the parameters, go to the notebook and change the parameters in the parser statement
+
+### Hyperparameter Optimization:
+Example statement:
+```
+python3 hyperval.py -m resnet -o test -e 100 -n 100 -s study_name
+```
+Other parameters can be changed. Do refer to the parser arguments for the same.
+
