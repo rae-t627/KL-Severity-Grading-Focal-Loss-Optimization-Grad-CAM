@@ -20,8 +20,21 @@ import sklearn
 
 import re
 import utils
+import argparse
 
-batch_size = 32
+parser = argparse.ArgumentParser(description='Compute accuracy of model')
+parser.add_argument('-m', '--model', type=str, choices = ["densenet", "resnet"], default="resnet")
+parser.add_argument('-w', '--weights', type = str, help = "path to weights", default=None)
+parser.add_argument('-p', '--pretrained', action="store_true", help="train on top of pretrained model")
+parser.add_argument('-d', '--dataset', type = str, help = "path to dataset", default='dataset')
+parser.add_argument('-b', '--batch_size', type=int, choices=[16, 32, 64, 128, 256], default=32)
+parser.add_argument('-l', '--loss', type=str, help="loss function to be used", choices=["fl", "ce"], default="ce")
+parser.add_argument('-o', '--output_dir', type=str, default="output")
+parser.add_argument('-e', '--epochs', type=int, default=100)
+parser.add_argument('--learning_rate', type=float, default=1e-3)
+
+args = parser.parse_args()
+
 frame_size = (224, 224)
 
 if torch.cuda.is_available():
@@ -32,19 +45,21 @@ else:
 # Set the parameter for reproducible results
 random_seed = 21 # 21, 42 or 84
 
-train_dataset_path = 'dataset/train'
-val_dataset_path = 'dataset/val'
+train_dataset_path = os.path.join(args.dataset, "train")
+val_dataset_path = os.path.join(args.dataset, "val")
 classes_header = ["0", "1", "2", "3", "4"] 
 n_classes = len(classes_header)
 
-# Choose CNN architecture and output directory
+# choose an architecture
+if (args.model == "densenet"):
+    cnn_model = custom_densenets.se_densenet121_model(n_classes)
+else:
+    cnn_model = custom_resnets.se_resnet18_model(n_classes)
 
-cnn_model = custom_densenets.se_densenet121_model(n_classes)
-# cnn_model = custom_resnets.se_resnet18_model(n_classes)
+if (args.pretrained):
+    cnn_model.load_state_dict(torch.load(args.weights, map_location=torch.device(device)))
 
-# cnn_model.load_state_dict(torch.load('models/SE_ResNet_FL_64.25.ckpt', map_location=torch.device(device)))
-
-checkpoints_dir = os.path.join('output', 'densenet')
+checkpoints_dir = args.output_dir
 
 if (not os.path.exists(checkpoints_dir)):
     os.mkdir(checkpoints_dir)
@@ -65,14 +80,14 @@ torch.backends.cudnn.deterministic = True
 
 #Loading the dataset
 transforms_to_train = transforms.Compose([         
-              transforms.ColorJitter(brightness=.33, saturation=.33),
-              transforms.RandomHorizontalFlip(p=0.5),
-              transforms.RandomAffine(degrees=(-10, 10), scale=(0.9, 1.10)),
-              transforms.Resize(frame_size), 
+    transforms.ColorJitter(brightness=.33, saturation=.33),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.RandomAffine(degrees=(-10, 10), scale=(0.9, 1.10)),
+    transforms.Resize(frame_size), 
 
-              transforms.ToTensor(),
-              transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-            ])
+    transforms.ToTensor(),
+    transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+])
 
 train_dataset = datasets.ImageFolder(train_dataset_path, transform=transforms_to_train)
 val_dataset = datasets.ImageFolder(val_dataset_path, transform=transforms_to_train)
@@ -87,10 +102,9 @@ val_sampler = SubsetRandomSampler(range(len(val_dataset)))
 
 class_weights=sklearn.utils.class_weight.compute_class_weight('balanced', classes=np.unique(train_targets), y=train_targets)
 class_weights = torch.FloatTensor(class_weights)
-print(class_weights)
 
 # Set up data loaders for training and validation
-batch_size = 32  # You can adjust this based on your needs
+batch_size = args.batch_size  # You can adjust this based on your needs
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, drop_last=True)
 val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, sampler=val_sampler, drop_last=True)
 
@@ -147,9 +161,12 @@ def train_model(model, train_loader, val_loader, loss, optimizer, num_epochs, pr
             y_gpu = y.to(device)
             prediction = model(x_gpu)   
 
-            ce_loss = loss(prediction, y_gpu)
-            pt = torch.exp(-ce_loss)
-            loss_value = torch.mean(alpha[y_gpu] * (1 - pt) ** gamma * ce_loss)
+            if (args.loss == "ce"):
+                loss_value = loss(prediction, y_gpu)
+            else:
+                ce_loss = loss(prediction, y_gpu)
+                pt = torch.exp(-ce_loss)
+                loss_value = torch.mean(alpha[y_gpu] * (1 - pt) ** gamma * ce_loss)
 
             optimizer.zero_grad()
             loss_value.backward()
@@ -214,9 +231,9 @@ else:
     cnn_model.to(device)
 
 loss = nn.CrossEntropyLoss(weight=class_weights).type(torch.cuda.FloatTensor)
-optimizer = optim.Adam(cnn_model.parameters(), lr=1e-3, weight_decay=1e-4)
+optimizer = optim.Adam(cnn_model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
 lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.95) # decrease lr by 5% every 5 epochs
 prev_val_accuracy = 0
 
 loss_history, train_history, val_history = \
-    train_model(cnn_model, train_loader, val_loader, loss, optimizer, 100, prev_val_accuracy, lr_scheduler, alpha = class_weights.to(device), gamma = 2.00)
+    train_model(cnn_model, train_loader, val_loader, loss, optimizer, args.epochs, prev_val_accuracy, lr_scheduler, alpha = class_weights.to(device), gamma = 2.00)
