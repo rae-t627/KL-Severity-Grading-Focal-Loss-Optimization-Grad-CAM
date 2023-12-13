@@ -22,7 +22,7 @@ import re
 import utils
 import argparse
 
-parser = argparse.ArgumentParser(description='Compute accuracy of model')
+parser = argparse.ArgumentParser(description='Train model')
 parser.add_argument('-m', '--model', type=str, choices = ["densenet", "resnet"], default="resnet")
 parser.add_argument('-w', '--weights', type = str, help = "path to weights", default=None)
 parser.add_argument('-p', '--pretrained', action="store_true", help="train on top of pretrained model")
