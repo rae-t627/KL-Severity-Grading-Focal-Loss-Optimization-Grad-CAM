@@ -5,6 +5,7 @@ Model weights can downloaded from [here.](https://drive.google.com/drive/folders
 Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatwork/knee-osteoarthritis-dataset-with-severity)
 
 ##Project Structure
+'''
 .
 ├── dataset
 │   ├── train
@@ -36,4 +37,5 @@ Dataset can be downloaded from [here.](https://www.kaggle.com/datasets/shashwatw
 ├── test.ipynb
 ├── train.py
 └── utils.py
+'''
 
